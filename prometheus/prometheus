@@ -1,0 +1,90 @@
+#!/bin/sh
+# chkconfig:35 90 3
+# description: elasticsearch server manage.
+
+# author: sofia@35.cn
+
+appPort=9090
+isWhliePid=/var/run/prometheusWhile.pid
+runPaths=/home/prometheus
+
+
+function status(){
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+	if [ "$myPid" != "" ]; then
+		echo "Started Prometheus. pid = $myPid"
+	else
+		echo "Stopped Prometheus."
+	fi
+}
+
+function start(){
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+	if [ ! -z "$myPid" ]; then
+		echo "Prometheus进程存在，3s后重试，请稍候..."
+		sleep 3
+		mypid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+		if [ ! -z "$myPid" ]; then
+			echo "忽略启动命令：Prometheus正在运行"
+			exit 1
+		fi
+	fi
+	echo "Starting Prometheus..."
+	su - fusecdn -c "nohup /home/prometheus/prometheus --web.enable-lifecycle --config.file=/home/prometheus/prometheus.yml > /dev/null 2>&1 &"
+	printf "Waiting for Prometheus..."
+	while true;
+	do
+		lsof -i:$appPort|grep LISTEN > /dev/null 2>&1
+        	if [[ $? == 0 ]] ; then break; fi;
+                myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+                if [ -z "$myPid" ]; then
+                    echo -e "\nFailed to start Prometheus."
+                    exit 1
+                fi
+        	printf ".";
+                sleep 1;
+        done
+	echo
+    	myPid=`lsof -i:$appPort|grep LISTEN|awk '{print $2}'`
+	echo "running: PID:$myPid"
+}
+
+function stop(){
+   	echo "Stopping Prometheus..."
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+   	if [ "$myPid" != "" ]; then
+                echo 0 > $isWhliePid
+                kill $myPid
+        fi
+	printf "Waiting for Prometheus..."
+        while true;
+	do
+  		myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+		if [ "$myPid" = "" ] ; then break; fi;
+  		printf ".";
+  		sleep 1;
+	done
+	echo
+}
+
+case "$1" in
+   start)
+    start
+    status
+   ;;
+   stop)
+    stop
+    status
+   ;;
+   restart)
+        $0 stop
+        $0 start
+   ;;
+   status)
+   	status
+   ;;
+   *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit $?
+   ;;
+esac

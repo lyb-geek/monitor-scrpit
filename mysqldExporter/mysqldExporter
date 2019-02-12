@@ -1,0 +1,90 @@
+#!/bin/sh
+# chkconfig:35 90 3
+# description: mysqldExporter server manage.
+
+
+
+appPort=9104
+isWhliePid=/var/run/mysqldExporterWhile.pid
+runPaths=/home/mysqld
+
+
+function status(){
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+	if [ "$myPid" != "" ]; then
+		echo "Started MysqldExporter. pid = $myPid"
+	else
+		echo "Stopped MysqldExporter."
+	fi
+}
+
+function start(){
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+	if [ ! -z "$myPid" ]; then
+		echo "MysqldExporter进程存在，3s后重试，请稍候..."
+		sleep 3
+		mypid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+		if [ ! -z "$myPid" ]; then
+			echo "忽略启动命令：MysqldExporter正在运行"
+			exit 1
+		fi
+	fi
+	echo "Starting mysqldExporter..."
+	su - fusecdn -c "nohup /home/mysqld/mysqld_exporter --config.my-cnf=/home/mysqld/.my.cnf > /dev/null 2>&1 &"
+	printf "Waiting for MysqldExporter..."
+	while true;
+	do
+		lsof -i:$appPort|grep LISTEN > /dev/null 2>&1
+        	if [[ $? == 0 ]] ; then break; fi;
+                myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+                if [ -z "$myPid" ]; then
+                    echo -e "\nFailed to start MysqldExporter."
+                    exit 1
+                fi
+        	printf ".";
+                sleep 1;
+        done
+	echo
+    	myPid=`lsof -i:$appPort|grep LISTEN|awk '{print $2}'`
+	echo "running: PID:$myPid"
+}
+
+function stop(){
+   	echo "Stopping MysqldExporter..."
+	myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+   	if [ "$myPid" != "" ]; then
+                echo 0 > $isWhliePid
+                kill $myPid
+        fi
+	printf "Waiting for MysqldExporter..."
+        while true;
+	do
+  		myPid=$(ps -ef | grep "$runPaths" | grep -v grep | awk '{print $2}')
+		if [ "$myPid" = "" ] ; then break; fi;
+  		printf ".";
+  		sleep 1;
+	done
+	echo
+}
+
+case "$1" in
+   start)
+    start
+    status
+   ;;
+   stop)
+    stop
+    status
+   ;;
+   restart)
+        $0 stop
+        $0 start
+   ;;
+   status)
+   	status
+   ;;
+   *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit $?
+   ;;
+esac
